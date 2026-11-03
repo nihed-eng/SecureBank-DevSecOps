@@ -1,0 +1,46 @@
+stages: [test, security, container]
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+
+cache:
+  paths: [.cache/pip]
+
+unit_tests:
+  image: python:3.12-slim
+  stage: test
+  before_script:
+    - pip install -r requirements.txt
+  script:
+    - pytest -q
+
+bandit:
+  image: python:3.12-slim
+  stage: security
+  before_script: ["pip install bandit"]
+  script: ["bandit -r src -ll"]
+  allow_failure: false
+
+semgrep:
+  image: returntocorp/semgrep:latest
+  stage: security
+  script: ["semgrep scan --config p/python --error src"]
+
+secret_scan:
+  image: zricetheboss/gitleaks:latest
+  stage: security
+  script: ["gitleaks detect --source . --no-git --redact --exit-code 1"]
+
+container_scan:
+  image: docker:cli
+  stage: container
+  services:
+    - name: docker:dind
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - docker build -t "$IMAGE_TAG" .
+    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 1 --severity HIGH,CRITICAL "$IMAGE_TAG"
