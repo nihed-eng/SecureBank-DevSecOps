@@ -3,6 +3,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "local-only-change-me")
     DATABASE = os.getenv("DATABASE_PATH", str(BASE_DIR / "securebank.db"))
@@ -10,6 +11,7 @@ class Config:
     TESTING = False
     JSON_SORT_KEYS = False
     MAX_CONTENT_LENGTH = 1 * 1024 * 1024
+
 
 class TestingConfig(Config):
     TESTING = True

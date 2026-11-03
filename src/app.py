@@ -6,6 +6,7 @@ from .routes.users import bp as users_bp
 from .routes.accounts import bp as accounts_bp
 from .routes.transactions import bp as transactions_bp
 
+
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -28,6 +29,7 @@ def create_app(test_config=None):
         return jsonify(error="Request too large"), 413
 
     return app
+
 
 app = create_app()
 

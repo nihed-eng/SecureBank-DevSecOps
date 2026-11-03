@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 """
 
+
 def get_db():
     if "db" not in g:
         path = current_app.config["DATABASE"]
@@ -35,15 +36,18 @@ def get_db():
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
 
+
 def close_db(_error=None):
     db = g.pop("db", None)
     if db is not None:
         db.close()
 
+
 def init_db():
     db = get_db()
     db.executescript(SCHEMA)
     db.commit()
+
 
 def init_app(app):
     app.teardown_appcontext(close_db)
