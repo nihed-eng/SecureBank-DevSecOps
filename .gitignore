@@ -20,3 +20,4 @@ reports/*
 .trivy-cache/
 image.tar
 *.bak
+.venv-wsl/
