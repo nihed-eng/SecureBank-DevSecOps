@@ -10,9 +10,23 @@ from .routes.transactions import bp as transactions_bp
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.from_object(Config)
+
     if test_config:
         app.config.update(test_config)
+
     init_app(app)
+
+    @app.after_request
+    def add_security_headers(response):
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, private"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
+
     for bp in (auth_bp, users_bp, accounts_bp, transactions_bp):
         app.register_blueprint(bp, url_prefix="/api" + bp.url_prefix)
 

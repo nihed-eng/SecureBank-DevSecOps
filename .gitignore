@@ -7,3 +7,8 @@ __pycache__/
 .coverage
 reports/*
 !reports/.gitkeep
+
+# Security tools and temporary Docker files
+.trivy-cache/
+image.tar
+*.bak

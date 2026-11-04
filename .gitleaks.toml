@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exclude generated security scan data"
+paths = [
+    '''(^|/)\.venv/''',
+    '''(^|/)\.trivy-cache/''',
+    '''^reports/'''
+]
