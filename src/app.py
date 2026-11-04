@@ -25,6 +25,8 @@ def create_app(test_config=None):
         response.headers["Expires"] = "0"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+
         return response
 
     for bp in (auth_bp, users_bp, accounts_bp, transactions_bp):

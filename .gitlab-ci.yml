@@ -1,4 +1,9 @@
-stages: [test, security, container]
+
+stages:
+  - test
+  - security
+  - container
+  - dast
 
 default:
   tags:
@@ -9,7 +14,12 @@ variables:
   IMAGE_TAG: "securebank:$CI_COMMIT_SHA"
 
 cache:
-  paths: [.cache/pip]
+  paths:
+    - .cache/pip
+
+# ==========================================
+# STAGE 1 : TESTS UNITAIRES
+# ==========================================
 
 unit_tests:
   image: python:3.12-slim
@@ -18,6 +28,10 @@ unit_tests:
     - pip install -r requirements.txt
   script:
     - pytest -q
+
+# ==========================================
+# STAGE 2 : ANALYSE DE SECURITE DU CODE
+# ==========================================
 
 bandit:
   image: python:3.12-slim
@@ -42,12 +56,18 @@ semgrep:
   stage: security
   script:
     - semgrep scan --config p/python --error src
+  allow_failure: false
 
 secret_scan:
   image: zricetheboss/gitleaks:latest
   stage: security
   script:
     - gitleaks dir --config .gitleaks.toml --redact --exit-code 1 .
+  allow_failure: false
+
+# ==========================================
+# STAGE 3 : CONSTRUCTION DE L'IMAGE DOCKER
+# ==========================================
 
 container_build:
   image: docker:27.5.1-cli
@@ -69,6 +89,10 @@ container_build:
       - image.tar
     expire_in: 1 day
 
+# ==========================================
+# STAGE 3 : ANALYSE DE L'IMAGE AVEC TRIVY
+# ==========================================
+
 trivy_scan:
   image:
     name: aquasec/trivy:0.76.1
@@ -89,4 +113,95 @@ trivy_scan:
     paths:
       - reports/final/trivy/trivy-ci.json
     expire_in: 30 days
+  allow_failure: false
+
+# ==========================================
+# STAGE 4 : DAST AVEC OWASP ZAP
+# ==========================================
+
+zap_api_scan:
+  image: docker:27.5.1-cli
+  stage: dast
+
+  needs:
+    - job: container_build
+      artifacts: true
+
+  services:
+    - name: docker:27.5.1-dind
+      alias: docker
+      command: ["--tls=false"]
+
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+
+  script:
+    # 1. Preparation des rapports
+    - mkdir -p reports/final/zap
+
+    # 2. Chargement de l'image SecureBank
+    - docker info
+    - docker load -i image.tar
+
+    # 3. Creation du reseau et du volume de test
+    - docker network create securebank-dast-net
+    - docker volume create securebank-dast-data
+
+    # 4. Demarrage de SecureBank
+    - >
+      docker run -d
+      --name securebank-dast-app
+      --network securebank-dast-net
+      --mount type=volume,source=securebank-dast-data,target=/data
+      -e SECRET_KEY=ci-dast-test-only
+      -e DATABASE_PATH=/data/securebank.db
+      -e VULNERABLE_DEMO=0
+      "$IMAGE_TAG"
+
+    # 5. Verification de disponibilite de l'application
+    - |
+      attempt=0
+      until docker exec securebank-dast-app python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)" >/dev/null 2>&1; do
+        attempt=$((attempt + 1))
+        if [ "$attempt" -ge 30 ]; then
+          echo "ERREUR : SecureBank ne demarre pas."
+          docker logs securebank-dast-app
+          exit 1
+        fi
+        sleep 2
+      done
+      echo "SecureBank est disponible."
+
+    # 6. Adaptation de la specification OpenAPI
+    - cp reports/final/zap/securebank-openapi.yaml reports/final/zap/securebank-openapi-ci.yaml
+    - sed -i 's#http://host.docker.internal:5001#http://securebank-dast-app:5000#g' reports/final/zap/securebank-openapi-ci.yaml
+
+    # 7. Scan OWASP ZAP en mode passif
+    - >
+      docker run --rm
+      --network securebank-dast-net
+      -v "$CI_PROJECT_DIR:/zap/wrk/:rw"
+      ghcr.io/zaproxy/zaproxy:stable
+      zap-api-scan.py
+      -t /zap/wrk/reports/final/zap/securebank-openapi-ci.yaml
+      -f openapi
+      -S
+      -r /zap/wrk/reports/final/zap/zap-api-ci.html
+      -J /zap/wrk/reports/final/zap/zap-api-ci.json
+      -T 5
+
+  after_script:
+    - docker rm -f securebank-dast-app || true
+    - docker network rm securebank-dast-net || true
+    - docker volume rm securebank-dast-data || true
+
+  artifacts:
+    when: always
+    paths:
+      - reports/final/zap/zap-api-ci.html
+      - reports/final/zap/zap-api-ci.json
+      - reports/final/zap/securebank-openapi-ci.yaml
+    expire_in: 30 days
+
   allow_failure: false

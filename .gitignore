@@ -1,12 +1,20 @@
-__pycache__/
+﻿__pycache__/
 .pytest_cache/
 .venv/
 .env
 *.db
 *.sqlite3
 .coverage
+
+# Ignore generated reports by default
 reports/*
 !reports/.gitkeep
+
+# Keep final security reports and screenshots
+!reports/final/
+!reports/final/**
+!reports/screenshots/
+!reports/screenshots/**
 
 # Security tools and temporary Docker files
 .trivy-cache/

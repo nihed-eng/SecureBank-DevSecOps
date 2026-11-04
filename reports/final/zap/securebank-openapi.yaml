@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: SecureBank API
+  version: 1.0.0
+  description: API SecureBank pour les tests DAST.
+
+servers:
+  - url: http://host.docker.internal:5001
+
+paths:
+  /api/accounts:
+    get:
+      summary: Lister les comptes
+      responses:
+        '200':
+          description: Liste des comptes
+        '401':
+          description: Authentification requise
+
+  /api/accounts/{account_id}:
+    get:
+      summary: Consulter un compte
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Compte accessible
+        '401':
+          description: Authentification requise
+        '404':
+          description: Compte absent ou inaccessible
+
+  /api/transactions:
+    get:
+      summary: Lister les transactions
+      parameters:
+        - name: account_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Liste des transactions
+        '401':
+          description: Authentification requise
+
+  /api/transactions/{transaction_id}:
+    get:
+      summary: Consulter une transaction
+      parameters:
+        - name: transaction_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Transaction accessible
+        '401':
+          description: Authentification requise
+        '404':
+          description: Transaction absente ou inaccessible
+
+  /api/users/me:
+    get:
+      summary: Consulter son profil
+      responses:
+        '200':
+          description: Profil utilisateur
+        '401':
+          description: Authentification requise
+
+  /api/users/{user_id}:
+    get:
+      summary: Consulter un profil utilisateur
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Profil accessible
+        '401':
+          description: Authentification requise
+        '403':
+          description: Acces interdit
+        '404':
+          description: Utilisateur inexistant
+
+  /api/users/demo-profile:
+    get:
+      summary: Consulter le profil de demonstration
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profil de demonstration

@@ -1,0 +1,74 @@
+﻿{
+    "Date":  "2026-11-04 15:18:27",
+    "Application":  "SecureBank",
+    "Mode":  "VULNERABLE_DEMO=0",
+    "Tests":  [
+                  {
+                      "Expected":  401,
+                      "Status":  "PASS",
+                      "Route":  "/api/accounts",
+                      "Observed":  401,
+                      "Test":  "Acces sans authentification"
+                  },
+                  {
+                      "Expected":  401,
+                      "Status":  "PASS",
+                      "Route":  "/api/accounts/1",
+                      "Observed":  401,
+                      "Test":  "Acces sans authentification"
+                  },
+                  {
+                      "Expected":  401,
+                      "Status":  "PASS",
+                      "Route":  "/api/transactions",
+                      "Observed":  401,
+                      "Test":  "Acces sans authentification"
+                  },
+                  {
+                      "Expected":  401,
+                      "Status":  "PASS",
+                      "Route":  "/api/transactions/1",
+                      "Observed":  401,
+                      "Test":  "Acces sans authentification"
+                  },
+                  {
+                      "Expected":  401,
+                      "Status":  "PASS",
+                      "Route":  "/api/users/me",
+                      "Observed":  401,
+                      "Test":  "Acces sans authentification"
+                  },
+                  {
+                      "Expected":  401,
+                      "Status":  "PASS",
+                      "Route":  "/api/users/1",
+                      "Observed":  401,
+                      "Test":  "Acces sans authentification"
+                  },
+                  {
+                      "Expected":  200,
+                      "Status":  "PASS",
+                      "Route":  "/api/accounts/1",
+                      "Observed":  200,
+                      "Test":  "B consulte son propre compte"
+                  },
+                  {
+                      "Expected":  404,
+                      "Status":  "PASS",
+                      "Route":  "/api/accounts/1",
+                      "Observed":  404,
+                      "Test":  "A tente d\u0027acceder au compte de B"
+                  },
+                  {
+                      "Expected":  403,
+                      "Status":  "PASS",
+                      "Route":  "/api/users/2",
+                      "Observed":  403,
+                      "Test":  "A tente de consulter le profil de B"
+                  }
+              ],
+    "Limitations":  [
+                        "Aucune route de creation de transaction n\u0027existe.",
+                        "Le controle IDOR des transactions a ete inspecte dans le code mais non teste dynamiquement."
+                    ]
+}
