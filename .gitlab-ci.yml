@@ -99,38 +99,18 @@ secret_scan:
 
 
 semgrep:
-  image: returntocorp/semgrep:latest
+  image: semgrep/semgrep:latest
   stage: semgrep
 
+  variables:
+    SEMGREP_SEND_METRICS: "off"
+
   script:
-    - |
-      echo "===== SEMGREP SECURITY SCAN ====="
-      ATTEMPT=1
-      MAX_ATTEMPTS=3
-
-      while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
-        if semgrep scan --config p/python --error src; then
-          echo "Semgrep scan completed successfully."
-          exit 0
-        else
-          STATUS=$?
-          echo "Semgrep attempt $ATTEMPT failed (exit code: $STATUS)."
-        fi
-
-        if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; then
-          echo "Retrying in 10 seconds..."
-          sleep 10
-        fi
-
-        ATTEMPT=$((ATTEMPT + 1))
-      done
-
-      echo "ERROR: Semgrep failed after $MAX_ATTEMPTS attempts."
-      exit 1
+    - echo "===== SEMGREP SECURITY SCAN ====="
+    - semgrep scan --config .semgrep/python.yml --metrics=off --disable-version-check --error src
 
   allow_failure: false
-
-
+  
 # ==========================================
 # STAGE 6 : CONSTRUCTION IMAGE DOCKER
 # ==========================================
