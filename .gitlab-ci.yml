@@ -68,10 +68,18 @@ dependency_audit:
   stage: dependency_audit
 
   before_script:
-    - pip install pip-audit
+    - python -m pip install --no-cache-dir pip-audit
 
   script:
-    - pip-audit -r requirements.txt
+    - mkdir -p reports/final/dependencies
+    - pip-audit --no-deps --disable-pip -r requirements.txt --format json --output reports/final/dependencies/pip-audit.json
+    - pip-audit --no-deps --disable-pip -r requirements.txt
+
+  artifacts:
+    when: always
+    paths:
+      - reports/final/dependencies/pip-audit.json
+    expire_in: 30 days
 
   allow_failure: false
 
