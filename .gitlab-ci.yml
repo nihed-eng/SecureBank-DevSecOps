@@ -59,7 +59,9 @@ semgrep:
   allow_failure: false
 
 secret_scan:
-  image: zricethezav/gitleaks:latest
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: [""]
   stage: security
   script:
     - gitleaks dir --config .gitleaks.toml --redact --exit-code 1 .
