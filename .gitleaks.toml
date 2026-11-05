@@ -6,5 +6,6 @@ description = "Exclude generated security scan data"
 paths = [
     '''(^|/)\.venv/''',
     '''(^|/)\.trivy-cache/''',
-    '''^reports/'''
+    '''^reports/''',
+    '''^\.semgrep/'''
 ]
