@@ -51,7 +51,7 @@ bandit:
   stage: bandit
 
   before_script:
-    - pip install bandit
+    - python -m pip install --no-cache-dir --retries 10 --timeout 60 bandit==1.9.4
 
   script:
     - bandit -r src -ll
