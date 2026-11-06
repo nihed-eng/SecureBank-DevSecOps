@@ -207,7 +207,8 @@ trivy_scan:
 # RUNNER DEDIE AVEC ACCES DOCKER
 # ==========================================
 
-docker_access_test:
+
+staging_deploy:
   stage: deploy
 
   image: docker:27.5.1-cli
@@ -215,19 +216,29 @@ docker_access_test:
   tags:
     - staging-deploy
 
+  dependencies:
+    - container_build
+
   script:
-    - echo "===== TEST ACCES AU MOTEUR DOCKER ====="
-    - docker info
+    - test -n "$SECRET_KEY" || (echo "ERREUR : SECRET_KEY est absente" && exit 1)
+    - echo "===== CHARGEMENT DE L'IMAGE ====="
+    - docker load -i image.tar
 
-    - echo "===== VERIFICATION DU CONTENEUR STAGING ====="
-    - docker ps --filter name=securebank-staging
+    - echo "===== REMPLACEMENT DU CONTENEUR STAGING ====="
+    - docker rm -f securebank-staging || true
 
-    - echo "===== TEST TERMINE ====="
+    - echo "===== DEMARRAGE DU NOUVEAU STAGING ====="
+    - docker run -d --name securebank-staging --restart unless-stopped -p 5002:5000 --mount type=volume,source=securebank-staging-data,target=/data -e SECRET_KEY="$SECRET_KEY" -e DATABASE_PATH=/data/securebank.db -e VULNERABLE_DEMO=0 "$IMAGE_TAG"
+
+    - echo "===== VERIFICATION DE LA SANTE ====="
+    - sleep 5
+    - docker exec securebank-staging python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=10).read().decode())"
 
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
 
   allow_failure: false
+
 
 # ==========================================
 # STAGE 9 : OWASP ZAP DAST
