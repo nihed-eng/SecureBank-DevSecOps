@@ -210,12 +210,11 @@ trivy_scan:
 
 staging_deploy:
   stage: deploy
-
   image: docker:27.5.1-cli
-
   tags:
     - staging-deploy
-
+  variables:
+    DOCKER_HOST: "unix:///var/run/docker.sock"
   dependencies:
     - container_build
 
