@@ -220,7 +220,7 @@ staging_deploy:
     - container_build
 
   script:
-    - test -n "$SECRET_KEY" || (echo "ERREUR : SECRET_KEY est absente" && exit 1)
+    - 'test -n "$SECRET_KEY" || (echo "ERREUR : SECRET_KEY est absente" && exit 1)'
     - echo "===== CHARGEMENT DE L'IMAGE ====="
     - docker load -i image.tar
 
