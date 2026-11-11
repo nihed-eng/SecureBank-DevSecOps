@@ -6,8 +6,8 @@ stages:
   - semgrep
   - container
   - trivy
-  - deploy
   - dast
+  - deploy
 
 # ==========================================
 # CONFIGURATION GLOBALE
@@ -340,3 +340,31 @@ zap_api_scan:
     expire_in: 30 days
 
   allow_failure: false
+production_validation:
+  stage: deploy
+  image: docker:27.5.1-cli
+
+  tags:
+    - staging-deploy
+
+  environment:
+    name: production
+    deployment_tier: production
+
+  resource_group: securebank-production
+
+  dependencies:
+    - container_build
+
+  script:
+    - echo "===== VALIDATION PRODUCTION ====="
+    - test -s image.tar
+    - docker --version
+    - echo "Image Docker disponible"
+    - echo "Validation OK - Aucun déploiement effectué"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+      allow_failure: true
+    - when: never
