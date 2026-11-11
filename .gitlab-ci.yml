@@ -141,10 +141,10 @@ container_build:
     DOCKER_TLS_CERTDIR: ""
 
   script:
-  - docker info
-  - docker build --pull -t "$IMAGE_TAG" .
-  - docker save "$IMAGE_TAG" -o image.tar
-  - test -s image.tar
+    - docker info
+    - docker build --pull -t "$IMAGE_TAG" .
+    - docker save "$IMAGE_TAG" -o image.tar
+    - test -s image.tar
 
   artifacts:
     paths:
@@ -386,55 +386,61 @@ staging_deploy:
 telegram_pdf_report:
   stage: report
   image: python:3.12-slim
-
   tags:
     - securebank-ce
-
   dependencies: []
-
   variables:
     PYTHONUNBUFFERED: "1"
-
   before_script:
-    - python -m pip install --no-cache-dir "requests==2.32.3" "reportlab==4.2.5"
-
+    - python -m pip install --no-cache-dir "requests==2.32.3" "reportlab==4.2.5" "chardet==5.2.0" "urllib3<2.3"
   script:
     - |
       set -eu
+      echo "===== CONFIGURATION ET TEST DE L'API GITLAB ====="
+      # Adresse testee avec succes depuis un conteneur Docker local.
+      export GITLAB_API_URL="http://host.docker.internal:8929/api/v4"
+      export NO_PROXY="host.docker.internal,localhost,127.0.0.1"
+      export no_proxy="$NO_PROXY"
 
-      echo "===== GENERATION RAPPORT DEVSECOPS ====="
+      test -n "${GITLAB_REPORT_TOKEN:-}" || {
+        echo "ATTENTION : GITLAB_REPORT_TOKEN absent"
+      }
 
-      test -f ci/generate_pipeline_report.py
+      # Diagnostic non bloquant : meme si l'API echoue,
+      # le script doit pouvoir produire et envoyer son PDF de diagnostic.
+      python - <<'PYTEST' || true
+      import os
+      import requests
 
+      url = (os.environ['GITLAB_API_URL'] + '/projects/'
+             + os.environ['CI_PROJECT_ID'] + '/pipelines/'
+             + os.environ['CI_PIPELINE_ID'] + '/jobs')
+      headers = {'PRIVATE-TOKEN': os.environ.get('GITLAB_REPORT_TOKEN', '')}
+      try:
+          response = requests.get(url, headers=headers,
+                                  params={'per_page': 100}, timeout=15)
+          print('API GitLab HTTP :', response.status_code)
+          if response.ok:
+              print('Jobs accessibles :', len(response.json()))
+          else:
+              print('Erreur API ou autorisation :', response.status_code)
+      except requests.RequestException as exc:
+          print('Erreur de connexion API :', type(exc).__name__, str(exc))
+      PYTEST
+
+      echo "===== GENERATION ET ENVOI PDF TELEGRAM ====="
       python ci/generate_pipeline_report.py
-
-      echo "===== VERIFICATION RAPPORT PDF ====="
-
-      if [ ! -s securebank_pipeline_report.pdf ]; then
-        PDF_FILE=$(find . -maxdepth 4 -type f -iname '*.pdf' -print -quit)
-
-        if [ -z "$PDF_FILE" ]; then
-          echo "ERREUR - Aucun fichier PDF trouve"
-          exit 1
-        fi
-
-        cp "$PDF_FILE" securebank_pipeline_report.pdf
-      fi
-
       test -s securebank_pipeline_report.pdf
-      echo "RAPPORT PDF DISPONIBLE"
-
+      echo "PDF genere : securebank_pipeline_report.pdf"
   artifacts:
     when: always
     paths:
       - securebank_pipeline_report.pdf
     expire_in: 30 days
-
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
       when: always
     - when: never
-
   allow_failure: true
 
 # ============================================================
