@@ -1,3 +1,10 @@
+
+# ============================================================
+# SECUREBANK - PIPELINE DEVSECOPS COMPLET
+# Tests -> SAST -> Secrets -> Docker -> Trivy -> DAST
+# -> Staging -> Rapport PDF Telegram -> Production manuelle
+# ============================================================
+
 stages:
   - test
   - bandit
@@ -7,11 +14,13 @@ stages:
   - container
   - trivy
   - dast
-  - deploy
+  - staging
+  - report
+  - production
 
-# ==========================================
+# ============================================================
 # CONFIGURATION GLOBALE
-# ==========================================
+# ============================================================
 
 default:
   tags:
@@ -25,13 +34,13 @@ cache:
   paths:
     - .cache/pip
 
-# ==========================================
-# STAGE 1 : TESTS UNITAIRES
-# ==========================================
+# ============================================================
+# STAGE 1 - TESTS UNITAIRES
+# ============================================================
 
 unit_tests:
-  image: python:3.12-slim
   stage: test
+  image: python:3.12-slim
 
   before_script:
     - pip install -r requirements.txt
@@ -41,14 +50,13 @@ unit_tests:
 
   allow_failure: false
 
-# ==========================================
-# STAGE 2 : BANDIT
-# ANALYSE DE SECURITE DU CODE PYTHON
-# ==========================================
+# ============================================================
+# STAGE 2 - BANDIT : SECURITE PYTHON
+# ============================================================
 
 bandit:
-  image: python:3.12-slim
   stage: bandit
+  image: python:3.12-slim
 
   before_script:
     - python -m pip install --no-cache-dir --retries 10 --timeout 60 bandit==1.9.4
@@ -58,14 +66,13 @@ bandit:
 
   allow_failure: false
 
-# ==========================================
-# STAGE 3 : DEPENDENCY AUDIT
-# ANALYSE DES DEPENDANCES PYTHON
-# ==========================================
+# ============================================================
+# STAGE 3 - PIP-AUDIT : DEPENDANCES
+# ============================================================
 
 dependency_audit:
-  image: python:3.12-slim
   stage: dependency_audit
+  image: python:3.12-slim
 
   before_script:
     - python -m pip install --no-cache-dir pip-audit
@@ -83,32 +90,29 @@ dependency_audit:
 
   allow_failure: false
 
-# ==========================================
-# STAGE 4 : SECRET SCAN
-# DETECTION DE SECRETS AVEC GITLEAKS
-# ==========================================
+# ============================================================
+# STAGE 4 - GITLEAKS : DETECTION DES SECRETS
+# ============================================================
 
 secret_scan:
+  stage: secret_scan
+
   image:
     name: zricethezav/gitleaks:latest
     entrypoint: [""]
-
-  stage: secret_scan
 
   script:
     - gitleaks dir --config .gitleaks.toml --redact --exit-code 1 .
 
   allow_failure: false
 
-# ==========================================
-# STAGE 5 : SEMGREP
-# ANALYSE STATIQUE DE SECURITE (SAST)
-# ==========================================
-
+# ============================================================
+# STAGE 5 - SEMGREP : ANALYSE SAST
+# ============================================================
 
 semgrep:
-  image: semgrep/semgrep:latest
   stage: semgrep
+  image: semgrep/semgrep:latest
 
   variables:
     SEMGREP_SEND_METRICS: "off"
@@ -118,14 +122,14 @@ semgrep:
     - semgrep scan --config .semgrep/python.yml --metrics=off --disable-version-check --error src
 
   allow_failure: false
-  
-# ==========================================
-# STAGE 6 : CONSTRUCTION IMAGE DOCKER
-# ==========================================
+
+# ============================================================
+# STAGE 6 - DOCKER BUILD
+# ============================================================
 
 container_build:
-  image: docker:27.5.1-cli
   stage: container
+  image: docker:27.5.1-cli
 
   services:
     - name: docker:27.5.1-dind
@@ -137,29 +141,28 @@ container_build:
     DOCKER_TLS_CERTDIR: ""
 
   script:
-    - docker info
-    - docker build -t "$IMAGE_TAG" .
-    - docker save "$IMAGE_TAG" -o image.tar
-    - test -s image.tar
+  - docker info
+  - docker build --pull -t "$IMAGE_TAG" .
+  - docker save "$IMAGE_TAG" -o image.tar
+  - test -s image.tar
 
   artifacts:
     paths:
       - image.tar
-    expire_in: 1 day
+    expire_in: 7 days
 
   allow_failure: false
 
-# ==========================================
-# STAGE 7 : TRIVY
-# ANALYSE DES VULNERABILITES DOCKER
-# ==========================================
+# ============================================================
+# STAGE 7 - TRIVY : SCAN IMAGE DOCKER
+# ============================================================
 
 trivy_scan:
+  stage: trivy
+
   image:
     name: aquasec/trivy:0.76.1
     entrypoint: [""]
-
-  stage: trivy
 
   dependencies:
     - container_build
@@ -183,7 +186,7 @@ trivy_scan:
       --format json
       --output reports/final/trivy/trivy-ci.json
 
-    # Verification bloquante
+    # Controle bloquant
     - >-
       trivy image
       --timeout 15m
@@ -202,51 +205,13 @@ trivy_scan:
 
   allow_failure: false
 
-# ==========================================
-# STAGE 8 : TEST RUNNER DE DEPLOIEMENT
-# RUNNER DEDIE AVEC ACCES DOCKER
-# ==========================================
-
-
-staging_deploy:
-  stage: deploy
-  image: docker:27.5.1-cli
-  tags:
-    - staging-deploy
-  variables:
-    DOCKER_HOST: "unix:///var/run/docker.sock"
-  dependencies:
-    - container_build
-
-  script:
-    - 'test -n "$SECRET_KEY" || (echo "ERREUR : SECRET_KEY est absente" && exit 1)'
-    - echo "===== CHARGEMENT DE L'IMAGE ====="
-    - docker load -i image.tar
-
-    - echo "===== REMPLACEMENT DU CONTENEUR STAGING ====="
-    - docker rm -f securebank-staging || true
-
-    - echo "===== DEMARRAGE DU NOUVEAU STAGING ====="
-    - docker run -d --name securebank-staging --restart unless-stopped -p 5002:5000 --mount type=volume,source=securebank-staging-data,target=/data -e SECRET_KEY="$SECRET_KEY" -e DATABASE_PATH=/data/securebank.db -e VULNERABLE_DEMO=0 "$IMAGE_TAG"
-
-    - echo "===== VERIFICATION DE LA SANTE ====="
-    - sleep 5
-    - docker exec securebank-staging python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=10).read().decode())"
-
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-
-  allow_failure: false
-
-
-# ==========================================
-# STAGE 9 : OWASP ZAP DAST
-# ANALYSE DYNAMIQUE DE L'API SECUREBANK
-# ==========================================
+# ============================================================
+# STAGE 8 - OWASP ZAP : SCAN DAST
+# ============================================================
 
 zap_api_scan:
-  image: docker:27.5.1-cli
   stage: dast
+  image: docker:27.5.1-cli
 
   dependencies:
     - container_build
@@ -261,47 +226,47 @@ zap_api_scan:
     DOCKER_TLS_CERTDIR: ""
 
   script:
-    # 1. Preparation des rapports
     - mkdir -p reports/final/zap
-
-    # 2. Chargement de l'image SecureBank
     - docker info
     - docker load -i image.tar
 
-    # 3. Creation du reseau et du volume uniques
+    # Reseau et volume temporaires
     - docker network create "securebank-dast-net-${CI_PIPELINE_ID}"
     - docker volume create "securebank-dast-data-${CI_PIPELINE_ID}"
 
-    # 4. Demarrage de SecureBank
+    # Demarrage de l'application de test
     - >-
       docker run -d
-      --name securebank-dast-app-${CI_PIPELINE_ID}
+      --name "securebank-dast-app-${CI_PIPELINE_ID}"
       --network "securebank-dast-net-${CI_PIPELINE_ID}"
-      --mount type=volume,source=securebank-dast-data-${CI_PIPELINE_ID},target=/data
+      --mount "type=volume,source=securebank-dast-data-${CI_PIPELINE_ID},target=/data"
       -e SECRET_KEY=ci-dast-test-only
       -e DATABASE_PATH=/data/securebank.db
       -e VULNERABLE_DEMO=0
       "$IMAGE_TAG"
 
-    # 5. Verification de disponibilite
+    # Verification de disponibilite
     - |
       attempt=0
 
-      until docker exec securebank-dast-app-${CI_PIPELINE_ID} python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)" >/dev/null 2>&1; do
+      until docker exec "securebank-dast-app-${CI_PIPELINE_ID}" \
+        python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)" \
+        >/dev/null 2>&1; do
+
         attempt=$((attempt + 1))
 
         if [ "$attempt" -ge 30 ]; then
-          echo "ERREUR : SecureBank ne demarre pas."
-          docker logs securebank-dast-app-${CI_PIPELINE_ID}
+          echo "ERREUR - SecureBank ne demarre pas"
+          docker logs "securebank-dast-app-${CI_PIPELINE_ID}"
           exit 1
         fi
 
         sleep 2
       done
 
-      echo "SecureBank est disponible."
+      echo "SecureBank DAST disponible"
 
-    # 6. Adaptation de la specification OpenAPI
+    # Adaptation OpenAPI
     - >-
       cp
       reports/final/zap/securebank-openapi.yaml
@@ -312,7 +277,7 @@ zap_api_scan:
       "s#http://host.docker.internal:5001#http://securebank-dast-app-${CI_PIPELINE_ID}:5000#g"
       reports/final/zap/securebank-openapi-ci.yaml
 
-    # 7. Scan OWASP ZAP en mode passif
+    # Scan ZAP
     - >-
       docker run --rm
       --network "securebank-dast-net-${CI_PIPELINE_ID}"
@@ -327,7 +292,7 @@ zap_api_scan:
       -T 5
 
   after_script:
-    - docker rm -f securebank-dast-app-${CI_PIPELINE_ID} || true
+    - docker rm -f "securebank-dast-app-${CI_PIPELINE_ID}" || true
     - docker network rm "securebank-dast-net-${CI_PIPELINE_ID}" || true
     - docker volume rm "securebank-dast-data-${CI_PIPELINE_ID}" || true
 
@@ -340,12 +305,152 @@ zap_api_scan:
     expire_in: 30 days
 
   allow_failure: false
-production_validation:
-  stage: deploy
+
+# ============================================================
+# STAGE 9 - STAGING : DEPLOIEMENT AUTOMATIQUE
+# ============================================================
+
+staging_deploy:
+  stage: staging
   image: docker:27.5.1-cli
 
   tags:
     - staging-deploy
+
+  variables:
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+
+  dependencies:
+    - container_build
+
+  resource_group: securebank-staging
+
+  script:
+    - |
+      set -eu
+
+      echo "===== VALIDATION STAGING ====="
+      test -n "${SECRET_KEY:-}" || {
+        echo "ERREUR - SECRET_KEY absente"
+        exit 1
+      }
+
+      echo "===== CHARGEMENT IMAGE ====="
+      docker load -i image.tar
+
+      echo "===== REMPLACEMENT STAGING ====="
+      docker rm -f securebank-staging || true
+
+      echo "===== DEMARRAGE STAGING ====="
+      docker run -d \
+        --name securebank-staging \
+        --restart unless-stopped \
+        -p 5002:5000 \
+        --mount type=volume,source=securebank-staging-data,target=/data \
+        -e SECRET_KEY="$SECRET_KEY" \
+        -e APP_ENV=staging \
+        -e DATABASE_PATH=/data/securebank.db \
+        -e VULNERABLE_DEMO=0 \
+        "$IMAGE_TAG"
+
+      echo "===== HEALTH CHECK STAGING ====="
+      attempt=0
+
+      until docker exec securebank-staging python -c \
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)" \
+        >/dev/null 2>&1; do
+
+        attempt=$((attempt + 1))
+
+        if [ "$attempt" -ge 30 ]; then
+          docker logs --tail 50 securebank-staging
+          echo "ECHEC - Staging indisponible"
+          exit 1
+        fi
+
+        sleep 2
+      done
+
+      echo "STAGING DEPLOYE AVEC SUCCES"
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+  allow_failure: false
+
+# ============================================================
+# STAGE 10 - RAPPORT PDF + TELEGRAM
+# EXECUTION MEME SI UN SCAN ECHOUE
+# ============================================================
+
+telegram_pdf_report:
+  stage: report
+  image: python:3.12-slim
+
+  tags:
+    - securebank-ce
+
+  dependencies: []
+
+  variables:
+    PYTHONUNBUFFERED: "1"
+
+  before_script:
+    - python -m pip install --no-cache-dir "requests==2.32.3" "reportlab==4.2.5"
+
+  script:
+    - |
+      set -eu
+
+      echo "===== GENERATION RAPPORT DEVSECOPS ====="
+
+      test -f ci/generate_pipeline_report.py
+
+      python ci/generate_pipeline_report.py
+
+      echo "===== VERIFICATION RAPPORT PDF ====="
+
+      if [ ! -s securebank_pipeline_report.pdf ]; then
+        PDF_FILE=$(find . -maxdepth 4 -type f -iname '*.pdf' -print -quit)
+
+        if [ -z "$PDF_FILE" ]; then
+          echo "ERREUR - Aucun fichier PDF trouve"
+          exit 1
+        fi
+
+        cp "$PDF_FILE" securebank_pipeline_report.pdf
+      fi
+
+      test -s securebank_pipeline_report.pdf
+      echo "RAPPORT PDF DISPONIBLE"
+
+  artifacts:
+    when: always
+    paths:
+      - securebank_pipeline_report.pdf
+    expire_in: 30 days
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: always
+    - when: never
+
+  allow_failure: true
+
+# ============================================================
+# STAGE 11 - PRODUCTION LOCALE
+# DEPLOIEMENT REEL, MANUEL, PREMIERE INSTALLATION
+# ============================================================
+
+production_deploy:
+  stage: production
+  image: docker:27.5.1-cli
+
+  tags:
+    - staging-deploy
+
+  variables:
+    DOCKER_HOST: "unix:///var/run/docker.sock"
 
   environment:
     name: production
@@ -357,14 +462,74 @@ production_validation:
     - container_build
 
   script:
-    - echo "===== VALIDATION PRODUCTION ====="
-    - test -s image.tar
-    - docker --version
-    - echo "Image Docker disponible"
-    - echo "Validation OK - Aucun déploiement effectué"
+    - |
+      set -eu
+
+      echo "===== VALIDATION PRODUCTION ====="
+
+      test -n "${PROD_SECRET_KEY:-}" || {
+        echo "ERREUR - PROD_SECRET_KEY absente"
+        exit 1
+      }
+
+      test "${#PROD_SECRET_KEY}" -ge 32 || {
+        echo "ERREUR - PROD_SECRET_KEY trop courte"
+        exit 1
+      }
+
+      test -s image.tar
+
+      # Protection contre le remplacement involontaire
+      if docker container inspect securebank-production >/dev/null 2>&1; then
+        echo "ERREUR - Production deja existante"
+        echo "Remplacement refuse pour proteger les donnees"
+        exit 1
+      fi
+
+      echo "===== CHARGEMENT IMAGE PRODUCTION ====="
+      docker load -i image.tar
+
+      echo "===== VOLUME INDEPENDANT ====="
+      docker volume create securebank-production-data
+
+      echo "===== DEMARRAGE PRODUCTION ====="
+      docker run -d \
+        --name securebank-production \
+        --restart unless-stopped \
+        -p 127.0.0.1:5003:5000 \
+        --mount type=volume,source=securebank-production-data,target=/data \
+        -e APP_ENV=production \
+        -e SECRET_KEY="$PROD_SECRET_KEY" \
+        -e DATABASE_PATH=/data/securebank.db \
+        -e VULNERABLE_DEMO=0 \
+        "$IMAGE_TAG"
+
+      echo "===== HEALTH CHECK PRODUCTION ====="
+
+      attempt=0
+
+      until docker exec securebank-production python -c \
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/health', timeout=3)" \
+        >/dev/null 2>&1; do
+
+        attempt=$((attempt + 1))
+
+        if [ "$attempt" -ge 30 ]; then
+          echo "ERREUR - Production indisponible"
+          docker logs --tail 50 securebank-production
+          docker rm -f securebank-production || true
+          exit 1
+        fi
+
+        sleep 2
+      done
+
+      echo "===== PRODUCTION DEPLOYEE AVEC SUCCES ====="
 
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true"'
       when: manual
       allow_failure: true
     - when: never
+
+  allow_failure: false
